@@ -97,10 +97,10 @@ export class GameScene implements Scene {
       this.player.isSpinningOut = false;
     }
 
-    this.camera = new Camera(CANVAS_WIDTH, CANVAS_HEIGHT);
-    this.camera.setBounds(this.tilemap.getWidth(), this.tilemap.getHeight());
-    this.camera.follow(this.player.position.x, this.player.position.y, 1);
-
+    this.camera = new Camera(CANVAS_WIDTH, CANVAS_HEIGHT, 1.8);
+this.camera.setBounds(this.tilemap.getWidth(), this.tilemap.getHeight());
+this.camera.followWithSpeed(this.player.position.x, this.player.position.y, 0, this.player.maxSpeed, 1);
+    
     // enemySpawns están en coordenadas de tiles
     this.enemies = EnemySpawner.spawnEnemies(levelData.enemySpawns, index);
 
