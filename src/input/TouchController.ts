@@ -1,132 +1,219 @@
-import { Vector2D } from '../utils/Vector2D';
+export interface InputState {
+  up: boolean;
+  down: boolean;
+  left: boolean;
+  right: boolean;
+  actionA: boolean; // Usado para Acelerar
+  actionB: boolean; // Usado para Aceite / Especial
+}
 
 export class TouchController {
-  private throttleValue: number = 0;
-  private steeringValue: number = 0;
-  private oilTriggered: boolean = false;
-  private pauseTriggered: boolean = false;
+  private state: InputState = {
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+    actionA: false,
+    actionB: false,
+  };
 
-  private dpadCenter: Vector2D = new Vector2D(120, 0);
-  private isTouchingDpad: boolean = false;
+  private canvas: HTMLCanvasElement;
+  private joystickCenter: { x: number; y: number } = { x: 0, y: 0 };
+  private joystickTouchId: number | null = null;
+  private joystickCurrent: { x: number; y: number } = { x: 0, y: 0 };
+  private joystickRadius: number = 60;
 
-  constructor() {
-    this.setupTouchListeners();
+  // Posiciones de los botones A y B en la derecha
+  private buttonARect = { x: 0, y: 0, radius: 45 };
+  private buttonBRect = { x: 0, y: 0, radius: 45 };
+  private touchAId: number | null = null;
+  private touchBId: number | null = null;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    this.setupListeners();
+    this.updateLayout();
   }
 
-  private setupTouchListeners(): void {
-    window.addEventListener('touchstart', this.handleTouch.bind(this), { passive: false });
-    window.addEventListener('touchmove', this.handleTouch.bind(this), { passive: false });
-    window.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
+  // Actualiza las posiciones fijas según el tamaño de la pantalla del celular
+  public updateLayout(): void {
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+
+    // Joystick fijo en la esquina inferior izquierda
+    this.joystickCenter = {
+      x: 100,
+      y: height - 120,
+    };
+    this.joystickCurrent = { ...this.joystickCenter };
+
+    // Botones A y B fijos en la esquina inferior derecha (estilo arcade)
+    this.buttonBRect = {
+      x: width - 180,
+      y: height - 120,
+      radius: 45,
+    };
+    this.buttonARect = {
+      x: width - 90,
+      y: height - 120,
+      radius: 45,
+    };
   }
 
-  private handleTouch(e: TouchEvent): void {
-    e.preventDefault();
+  private setupListeners(): void {
+    const handleTouch = (e: TouchEvent) => {
+      e.preventDefault();
+      
+      // Resetear estados táctiles antes de evaluar
+      let joyActive = false;
+      let aActive = false;
+      let bActive = false;
 
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    this.dpadCenter.y = height - 120;
+      const activeJoystickTouch = Array.from(e.touches).find(t => t.identifier === this.joystickTouchId);
+      const activeTouchA = Array.from(e.touches).find(t => t.identifier === this.touchAId);
+      const activeTouchB = Array.from(e.touches).find(t => t.identifier === this.touchBId);
 
-    let localThrottle = 0;
-    let localSteering = 0;
-    let localOil = false;
+      // Si levantó el dedo del joystick
+      if (this.joystickTouchId !== null && !activeJoystickTouch) {
+        this.joystickTouchId = null;
+        this.joystickCurrent = { ...this.joystickCenter };
+      }
 
-    for (let i = 0; i < e.touches.length; i++) {
-      const t = e.touches[i];
-      const touchPos = new Vector2D(t.clientX, t.clientY);
+      // Si levantó el dedo del Botón A
+      if (this.touchAId !== null && !activeTouchA) {
+        this.touchAId = null;
+      }
 
-      // Zona D-pad analógica virtual (Lado Izquierdo)
-      if (touchPos.x < width * 0.4) {
-        const diff = touchPos.subtract(this.dpadCenter);
-        if (diff.length() < 120) {
-          localSteering = Math.max(-1, Math.min(1, diff.x / 60));
-          localThrottle = Math.max(-1, Math.min(1, -diff.y / 60));
+      // Si levantó el dedo del Botón B
+      if (this.touchBId !== null && !activeTouchB) {
+        this.touchBId = null;
+      }
+
+      // Evaluar cada toque actual en la pantalla
+      for (let i = 0; i < e.targetTouches.length; i++) {
+        const touch = e.targetTouches[i];
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        const x = (touch.clientX - rect.left) * scaleX;
+        const y = (touch.clientY - rect.top) * scaleY;
+
+        // 1. Zona Izquierda: Joystick
+        if (x < this.canvas.width / 2) {
+          if (this.joystickTouchId === null || this.joystickTouchId === touch.identifier) {
+            this.joystickTouchId = touch.identifier;
+            joyActive = true;
+
+            // Calcular desplazamiento del joystick
+            const dx = x - this.joystickCenter.x;
+            const dy = y - this.joystickCenter.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < this.joystickRadius) {
+              this.joystickCurrent = { x, y };
+            } else {
+              this.joystickCurrent = {
+                x: this.joystickCenter.x + (dx / dist) * this.joystickRadius,
+                y: this.joystickCenter.y + (dy / dist) * this.joystickRadius,
+              };
+            }
+          }
+        } 
+        // 2. Zona Derecha: Botones A y B
+        else {
+          // Evaluar Botón A (Acelerar)
+          const distA = Math.hypot(x - this.buttonARect.x, y - this.buttonARect.y);
+          if (distA <= this.buttonARect.radius * 1.5) { // Área amplia para comodidad
+            if (this.touchAId === null || this.touchAId === touch.identifier) {
+              this.touchAId = touch.identifier;
+              aActive = true;
+            }
+          }
+
+          // Evaluar Botón B (Aceite)
+          const distB = Math.hypot(x - this.buttonBRect.x, y - this.buttonBRect.y);
+          if (distB <= this.buttonBRect.radius * 1.5) {
+            if (this.touchBId === null || this.touchBId === touch.identifier) {
+              this.touchBId = touch.identifier;
+              bActive = true;
+            }
+          }
         }
       }
 
-      // Zona de Botón de Aceite (Lado Derecho Inferior)
-      if (touchPos.x > width * 0.7 && touchPos.y > height - 160) {
-        localOil = true;
-      }
+      // Actualizar estados direccionales basados en el joystick fijo
+      const moveX = this.joystickCurrent.x - this.joystickCenter.x;
+      const moveY = this.joystickCurrent.y - this.joystickCenter.y;
+      const deadZone = 10;
 
-      // Zona de Pausa (Esquina Superior Derecha)
-      if (touchPos.x > width - 60 && touchPos.y < 60) {
-        this.pauseTriggered = true;
-      }
-    }
+      this.state.left = joyActive && moveX < -deadZone;
+      this.state.right = joyActive && moveX > deadZone;
+      this.state.up = joyActive && moveY < -deadZone;
+      this.state.down = joyActive && moveY > deadZone;
 
-    this.steeringValue = localSteering;
-    this.throttleValue = localThrottle;
-    this.oilTriggered = localOil;
+      this.state.actionA = aActive;
+      this.state.actionB = bActive;
+    };
+
+    this.canvas.addEventListener('touchstart', handleTouch, { passive: false });
+    this.canvas.addEventListener('touchmove', handleTouch, { passive: false });
+    this.canvas.addEventListener('touchend', handleTouch, { passive: false });
+    this.canvas.addEventListener('touchcancel', handleTouch, { passive: false });
   }
 
-  private handleTouchEnd(e: TouchEvent): void {
-    if (e.touches.length === 0) {
-      this.throttleValue = 0;
-      this.steeringValue = 0;
-      this.oilTriggered = false;
-    }
+  public getState(): InputState {
+    return this.state;
   }
 
-  public getThrottle(): number {
-    return this.throttleValue;
-  }
-
-  public getSteering(): number {
-    return this.steeringValue;
-  }
-
-  public isOilPressed(): boolean {
-    return this.oilTriggered;
-  }
-
-  public isPausePressed(): boolean {
-    const val = this.pauseTriggered;
-    this.pauseTriggered = false;
-    return val;
-  }
-
-  public render(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  // Dibuja los controles en pantalla con estética de recreativa clásica
+  public draw(ctx: CanvasRenderingContext2D): void {
     ctx.save();
-
-    // D-Pad Virtual (Izquierda)
-    const dpadX = 120;
-    const dpadY = height - 120;
-
+    
+    // Dibujar base del Joystick (Izquierda)
     ctx.beginPath();
-    ctx.arc(dpadX, dpadY, 60, 0, Math.PI * 2);
+    ctx.arc(this.joystickCenter.x, this.joystickCenter.y, this.joystickRadius, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    // Stick activo
-    const stickX = dpadX + this.steeringValue * 40;
-    const stickY = dpadY - this.throttleValue * 40;
-
-    ctx.beginPath();
-    ctx.arc(stickX, stickY, 25, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(52, 152, 219, 0.5)';
-    ctx.fill();
-
-    // Botón de Aceite (Derecha)
-    const oilX = width - 100;
-    const oilY = height - 100;
-
-    ctx.beginPath();
-    ctx.arc(oilX, oilY, 45, 0, Math.PI * 2);
-    ctx.fillStyle = this.oilTriggered ? 'rgba(230, 126, 34, 0.8)' : 'rgba(230, 126, 34, 0.4)';
-    ctx.fill();
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.lineWidth = 3;
+    ctx.fill();
+    ctx.stroke();
+
+    // Palanca del Joystick
+    ctx.beginPath();
+    ctx.arc(this.joystickCurrent.x, this.joystickCurrent.y, 25, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 100, 100, 0.6)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+
+    // Botón B (Aceite - Izquierdo de los dos de acción)
+    ctx.beginPath();
+    ctx.arc(this.buttonBRect.x, this.buttonBRect.y, this.buttonBRect.radius, 0, Math.PI * 2);
+    ctx.fillStyle = this.state.actionB ? 'rgba(50, 205, 50, 0.7)' : 'rgba(0, 150, 255, 0.3)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 3;
+    ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 18px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('ACEITE', oilX, oilY);
+    ctx.fillText('B', this.buttonBRect.x, this.buttonBRect.y);
+
+    // Botón A (Acelerar - Derecho de los dos de acción)
+    ctx.beginPath();
+    ctx.arc(this.buttonARect.x, this.buttonARect.y, this.buttonARect.radius, 0, Math.PI * 2);
+    ctx.fillStyle = this.state.actionA ? 'rgba(50, 205, 50, 0.7)' : 'rgba(255, 50, 50, 0.3)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 3;
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('A', this.buttonARect.x, this.buttonARect.y);
 
     ctx.restore();
   }
-}
+        }
