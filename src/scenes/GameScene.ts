@@ -55,8 +55,8 @@ export class GameScene implements Scene {
     this.resumeFromContinue = fromContinue;
   }
 
-    public init(): void {
-    // Inicializar los controles táctiles vinculados al canvas del DOM
+      public init(): void {
+    // Vincular el controlador táctil al canvas del juego al iniciar la escena
     const canvasElement = document.querySelector('canvas');
     if (canvasElement) {
       InputManager.getInstance().initTouch(canvasElement);
@@ -73,7 +73,8 @@ export class GameScene implements Scene {
     this.gameOver = false;
     this.levelComplete = false;
     this.loadLevel(this.levelIndex);
-    }
+  }
+  
   
 
   private loadLevel(index: number): void {
