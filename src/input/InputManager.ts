@@ -6,12 +6,12 @@ export class InputManager {
   private static instance: InputManager;
   private keyboard: KeyboardController;
   private gamepad: GamepadController;
-  private touch: TouchController;
+  private touch: TouchController | null = null;
 
   private constructor() {
     this.keyboard = new KeyboardController();
     this.gamepad = new GamepadController();
-    this.touch = new TouchController();
+    // Nota: El TouchController se inicializará cuando el canvas esté disponible
   }
 
   public static getInstance(): InputManager {
@@ -21,6 +21,13 @@ export class InputManager {
     return InputManager.instance;
   }
 
+  // Inicializar el touch controller pasándole el canvas del juego
+  public initTouch(canvas: HTMLCanvasElement): void {
+    if (!this.touch) {
+      this.touch = new TouchController(canvas);
+    }
+  }
+
   public getThrottle(): number {
     const k = this.keyboard.getThrottle();
     if (k !== 0) return k;
@@ -28,7 +35,12 @@ export class InputManager {
     const g = this.gamepad.getThrottle();
     if (g !== 0) return g;
 
-    return this.touch.getThrottle();
+    if (this.touch) {
+      const state = this.touch.getState();
+      // Botón A presionado = Acelerar a fondo (1.0), si no, 0
+      return state.actionA ? 1.0 : 0;
+    }
+    return 0;
   }
 
   public getSteering(): number {
@@ -38,21 +50,31 @@ export class InputManager {
     const g = this.gamepad.getSteering();
     if (g !== 0) return g;
 
-    return this.touch.getSteering();
+    if (this.touch) {
+      const state = this.touch.getState();
+      if (state.left) return -1.0; // Girar a la izquierda
+      if (state.right) return 1.0;  // Girar a la derecha
+    }
+    return 0;
   }
 
   public isOilPressed(): boolean {
-    return this.keyboard.isOilPressed() || this.gamepad.isOilPressed() || this.touch.isOilPressed();
+    if (this.keyboard.isOilPressed() || this.gamepad.isOilPressed()) return true;
+
+    if (this.touch) {
+      // Botón B presionado = Soltar aceite
+      return this.touch.getState().actionB;
+    }
+    return false;
   }
 
   public isPausePressed(): boolean {
-    return this.keyboard.isPausePressed() || this.gamepad.isPausePressed() || this.touch.isPausePressed();
+    return this.keyboard.isPausePressed() || this.gamepad.isPausePressed();
   }
 
   public renderTouchOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-    // Renderizar controles virtuales si el dispositivo admite toque
-    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-      this.touch.render(ctx, width, height);
+    if (('ontouchstart' in window || navigator.maxTouchPoints > 0) && this.touch) {
+      this.touch.draw(ctx);
     }
   }
-}
+}  
