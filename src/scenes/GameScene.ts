@@ -143,8 +143,14 @@ this.camera.followWithSpeed(this.player.position.x, this.player.position.y, 0, t
       AudioManager.getInstance().playOilSound();
     }
 
-    this.camera.follow(this.player.position.x, this.player.position.y);
-
+    this.camera.followWithSpeed(
+      this.player.position.x, 
+      this.player.position.y, 
+      this.player.speed || 0, 
+      this.player.maxSpeed || 10
+    );
+    
+    
     // Actualizar manchas de aceite
     for (let i = this.oilSlicks.length - 1; i >= 0; i--) {
       this.oilSlicks[i].update(dt);
